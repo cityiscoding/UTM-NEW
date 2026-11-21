@@ -69,7 +69,7 @@ struct ContentView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
                 openSheetPresented = true
             }
-        }.fileImporter(isPresented: $openSheetPresented, allowedContentTypes: [.UTM, .UTMextension], allowsMultipleSelection: true, onCompletion: selectImportedUTM)
+        }.fileImporter(isPresented: $openSheetPresented, allowedContentTypes: [.UTM, .UTMextension, .folder, .data], allowsMultipleSelection: true, onCompletion: selectImportedUTM)
         .onReceive(NSNotification.InstallGuestTools) { notification in
             guard let vm = notification.object as? any UTMVirtualMachine else {
                 logger.error("InstallGuestTools notification but no VM object is provided!")
@@ -162,7 +162,8 @@ struct ContentView: View {
     
     private func importUTM(url: URL) async throws {
         guard url.isFileURL else {
-            return // ignore
+            logger.error("ignoring non-file URL from importer: \(url)")
+            throw UTMDataError.importFailed
         }
         try await data.importUTM(from: url)
     }

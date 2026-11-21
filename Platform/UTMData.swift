@@ -675,7 +675,10 @@ enum AlertItem: Identifiable {
     /// - Parameter url: File URL to read from
     /// - Parameter asShortcut: Create a shortcut rather than a copy
     func importUTM(from url: URL, asShortcut: Bool = true) async throws {
-        guard url.isFileURL else { return }
+        guard url.isFileURL else {
+            logger.error("importUTM called with non-file URL: \(url)")
+            throw UTMDataError.importFailed
+        }
         let isScopedAccess = url.startAccessingSecurityScopedResource()
         defer {
             if isScopedAccess {
@@ -686,8 +689,21 @@ enum AlertItem: Identifiable {
         logger.info("importing: \(url)")
         // attempt to turn temp URL to presistent bookmark early otherwise,
         // when stopAccessingSecurityScopedResource() is called, we lose access
-        let bookmark = try url.persistentBookmarkData()
-        let url = try URL(resolvingPersistentBookmarkData: bookmark)
+        let bookmark: Data
+        do {
+            bookmark = try url.persistentBookmarkData()
+        } catch {
+            logger.error("importing \(url) failed to create bookmark: \(error)")
+            throw UTMDataError.fileAccessDenied(url)
+        }
+        let resolvedUrl: URL
+        do {
+            resolvedUrl = try URL(resolvingPersistentBookmarkData: bookmark)
+        } catch {
+            logger.error("importing failed to resolve bookmark: \(error)")
+            throw UTMDataError.fileAccessDenied(url)
+        }
+        let url = resolvedUrl
         let fileBasePath = url.deletingLastPathComponent()
         let fileName = url.lastPathComponent
         let dest = documentsURL.appendingPathComponent(fileName, isDirectory: true)
@@ -766,9 +782,22 @@ enum AlertItem: Identifiable {
         logger.info("importing: \(url)")
         // attempt to turn temp URL to presistent bookmark early otherwise,
         // when stopAccessingSecurityScopedResource() is called, we lose access
-        let bookmark = try url.persistentBookmarkData()
-        let url = try URL(resolvingPersistentBookmarkData: bookmark)
-        
+        let bookmark: Data
+        do {
+            bookmark = try url.persistentBookmarkData()
+        } catch {
+            logger.error("importing \(url) failed to create bookmark: \(error)")
+            throw UTMDataError.fileAccessDenied(url)
+        }
+        let resolvedUrl: URL
+        do {
+            resolvedUrl = try URL(resolvingPersistentBookmarkData: bookmark)
+        } catch {
+            logger.error("importing failed to resolve bookmark: \(error)")
+            throw UTMDataError.fileAccessDenied(url)
+        }
+        let url = resolvedUrl
+
         // get unique filename, for every import we create a new VM
         let newUrl = UTMData.newImage(from: url, to: documentsURL)
         let fileName = newUrl.lastPathComponent
@@ -1252,6 +1281,7 @@ enum UTMDataError: Error {
     case notImplemented
     case reconnectFailed
     case driveHasSnapshots
+    case fileAccessDenied(URL)
 }
 
 extension UTMDataError: LocalizedError {
@@ -1287,6 +1317,8 @@ extension UTMDataError: LocalizedError {
             return NSLocalizedString("Failed to reconnect to the server.", comment: "UTMData")
         case .driveHasSnapshots:
             return NSLocalizedString("Space cannot be reclaimed from a drive while it holds snapshots or a suspended state.", comment: "UTMData")
+        case .fileAccessDenied(let url):
+            return String.localizedStringWithFormat(NSLocalizedString("Cannot access '%@'. If the app was re-signed (e.g. with ESign), make sure it keeps its document types and is installed with a matching bundle identifier and App Group.", comment: "UTMData"), url.lastPathComponent)
         }
     }
 }
