@@ -1,9 +1,10 @@
 name: Build unsigned IPA
 
-# Manual build of an unsigned UTM.ipa (JIT/full build) for re-signing tools
-# such as ESign. Uses the repo's own scripts; sysroot is built once and then
-# cached by GitHub Actions. Run from the Actions tab with "Run workflow".
+# Builds an unsigned IPA for re-signing. The SDK compatibility branch tests
+# the full iOS build against the existing sysroot cache on each push.
 on:
+  push:
+    branches: [fix/ipa-sdk26]
   workflow_dispatch:
     inputs:
       scheme:
@@ -16,6 +17,7 @@ on:
           - iOS-SE
 
 env:
+  SCHEME: ${{ inputs.scheme || 'iOS' }}
   BUILD_XCODE_PATH: /Applications/Xcode.app
   RUNNER_IMAGE: macos-26
 
@@ -29,7 +31,7 @@ jobs:
       - name: Resolve platform
         id: vars
         run: |
-          if [ "${{ inputs.scheme }}" = "iOS-SE" ]; then
+          if [ "$SCHEME" = "iOS-SE" ]; then
             echo "platform=ios-tci" >> "$GITHUB_OUTPUT"
           else
             echo "platform=ios" >> "$GITHUB_OUTPUT"
@@ -45,12 +47,13 @@ jobs:
         run: echo "/usr/local/opt/bison/bin:/opt/homebrew/opt/bison/bin" >> "$GITHUB_PATH"
       - name: Check cache
         id: cache-sysroot
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/cache@v4
         with:
           path: ./sysroot-${{ steps.vars.outputs.platform }}-arm64
           key: ${{ steps.vars.outputs.platform }}-arm64-${{ hashFiles('scripts/build_dependencies.sh', 'scripts/fixup.sh') }}-${{ hashFiles('patches/**') }}
       - name: Install build requirements
-        if: steps.cache-sysroot.outputs.cache-hit != 'true'
+        if: github.event_name == 'workflow_dispatch' && steps.cache-sysroot.outputs.cache-hit != 'true'
         run: |
           brew uninstall cmake || true
           brew install bison pkg-config gettext glib-utils libgpg-error nasm make meson cmake
@@ -59,7 +62,7 @@ jobs:
           gem install --user-install xcpretty || true
           rm -f /usr/local/lib/pkgconfig/*.pc
       - name: Build sysroot
-        if: steps.cache-sysroot.outputs.cache-hit != 'true'
+        if: github.event_name == 'workflow_dispatch' && steps.cache-sysroot.outputs.cache-hit != 'true'
         run: ./scripts/build_dependencies.sh -p ${{ steps.vars.outputs.platform }} -a arm64
         env:
           # limit 1 CPU for TCI builds due to memory issues
@@ -86,12 +89,10 @@ jobs:
       - name: Static checks
         run: sh Tests/Static/run_all.sh --no-sdp
       - name: Build xcarchive
-        run: ./scripts/build_utm.sh -k iphoneos -s ${{ inputs.scheme }} -a arm64 -o UTM
+        run: ./scripts/build_utm.sh -k iphoneos -s "$SCHEME" -a arm64 -o UTM
       - name: Install ldid
         run: brew install ldid
       - name: Package unsigned IPA
-        env:
-          SCHEME: ${{ inputs.scheme }}
         run: |
           MODE=ipa
           IPA=out/UTM.ipa
@@ -104,6 +105,6 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: UTM-unsigned-${{ inputs.scheme }}
+          name: UTM-unsigned-${{ env.SCHEME }}
           path: out/*.ipa
           if-no-files-found: error
