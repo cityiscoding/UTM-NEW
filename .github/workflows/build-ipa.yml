@@ -87,13 +87,23 @@ jobs:
         run: sh Tests/Static/run_all.sh --no-sdp
       - name: Build xcarchive
         run: ./scripts/build_utm.sh -k iphoneos -s ${{ inputs.scheme }} -a arm64 -o UTM
+      - name: Install ldid
+        run: brew install ldid
       - name: Package unsigned IPA
+        env:
+          SCHEME: ${{ inputs.scheme }}
         run: |
           MODE=ipa
-          if [ "${{ inputs.scheme }}" = "iOS-SE" ]; then MODE=ipa-se; fi
-          ./scripts/package.sh $MODE UTM.xcarchive out
+          IPA=out/UTM.ipa
+          if [ "$SCHEME" = "iOS-SE" ]; then
+            MODE=ipa-se
+            IPA='out/UTM SE.ipa'
+          fi
+          ./scripts/package.sh "$MODE" UTM.xcarchive out
+          unzip -tq "$IPA"
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: UTM-unsigned-${{ inputs.scheme }}
           path: out/*.ipa
+          if-no-files-found: error
