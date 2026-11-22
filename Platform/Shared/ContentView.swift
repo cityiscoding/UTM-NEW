@@ -69,7 +69,16 @@ struct ContentView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
                 openSheetPresented = true
             }
+        #if canImport(SwiftUI, _version: 8.0)
         }.fileImporter(isPresented: $openSheetPresented, allowedContentTypes: [.UTM, .UTMextension, .folder, .data], allowsMultipleSelection: true, onCompletion: selectImportedUTM)
+        #else
+        // The SDK shipped on this runner predates the iOS 27 SwiftUI APIs used by the
+        // exported "com.utmapp.utm" declaration, and a re-signed app may also lose
+        // that declaration. Fall back to system types (.package matches ".utm"
+        // bundles) so the picker never ends up with an unsatisfiable filter that
+        // greys out every file.
+        }.fileImporter(isPresented: $openSheetPresented, allowedContentTypes: [.package, .folder, .data], allowsMultipleSelection: true, onCompletion: selectImportedUTM)
+        #endif
         .onReceive(NSNotification.InstallGuestTools) { notification in
             guard let vm = notification.object as? any UTMVirtualMachine else {
                 logger.error("InstallGuestTools notification but no VM object is provided!")
