@@ -715,7 +715,11 @@ enum AlertItem: Identifiable {
             return
         }
         // check if VM is valid
-        guard let opened = try? VMData(url: url) else {
+        let opened: VMData
+        do {
+            opened = try VMData(url: url)
+        } catch {
+            logger.error("importing \(url) failed to load VM: \(error)")
             throw UTMDataError.importFailed
         }
         let isInbox = fileBasePath.resolvingSymlinksInPath().path == documentsURL.appendingPathComponent("Inbox", isDirectory: true).path
